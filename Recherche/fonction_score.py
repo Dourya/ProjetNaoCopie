@@ -422,39 +422,56 @@ def score(x, y, grid, show_display=False, step_limit=5000, taille_seeker=30, ang
 #   Test et affichage (MODIFIÉ pour les coordonnées valides)
 # =======================================================================================
 
-with open("./Recherche/maps/carte_03.json", "r") as f:
-    grid = np.array(json.load(f))
+# ... (Tout le code des classes Seeker, Explorer, et fonctions reste inchangé au-dessus) ...
 
+# =======================================================================================
+#   Test et affichage 
+# =======================================================================================
 
-carte = np.array(grid) 
+# ⚠️ AJOUTEZ CETTE LIGNE ET INDENTEZ TOUT LE RESTE DESSOUS
+if __name__ == "__main__":
+    
+    # On importe les librairies nécessaires au test ici si besoin
+    import os
+    
+    try:
+        # Note : Le chemin dépend d'où vous lancez le script. 
+        # Si vous lancez python Recherche/fonction_score.py, ce chemin est bon.
+        with open("./Recherche/maps/carte_03.json", "r") as f:
+            grid = np.array(json.load(f))
 
-facteur = 4
-nouvelle_taille_row = carte.shape[0] // facteur
-nouvelle_taille_col = carte.shape[1] // facteur
+        carte = np.array(grid) 
 
-carte_reduite = np.zeros((nouvelle_taille_row, nouvelle_taille_col), dtype=int)
+        facteur = 4
+        nouvelle_taille_row = carte.shape[0] // facteur
+        nouvelle_taille_col = carte.shape[1] // facteur
 
-for i in range(nouvelle_taille_row):
-    for j in range(nouvelle_taille_col):
-        bloc = carte[i*facteur:(i+1)*facteur, j*facteur:(j+1)*facteur]
-        carte_reduite[i, j] = 1 if np.any(bloc == 1) else 0
+        carte_reduite = np.zeros((nouvelle_taille_row, nouvelle_taille_col), dtype=int)
 
-# Coordonnées de test qui fonctionnent sur la carte réduite (87x177)
-TEST_TARGET_X = 60  # Colonne (X) valide
-TEST_TARGET_Y = 120 # Ligne (Y) valide
+        for i in range(nouvelle_taille_row):
+            for j in range(nouvelle_taille_col):
+                bloc = carte[i*facteur:(i+1)*facteur, j*facteur:(j+1)*facteur]
+                carte_reduite[i, j] = 1 if np.any(bloc == 1) else 0
 
-print(f"Lancement de la recherche sur la carte réduite ({nouvelle_taille_row}x{nouvelle_taille_col})...")
+        # Coordonnées de test
+        TEST_TARGET_X = 60  
+        TEST_TARGET_Y = 120 
 
-result_steps = score(
-    x=TEST_TARGET_X,
-    y=TEST_TARGET_Y,
-    grid=carte_reduite, 
-    show_display=True, 
-    taille_seeker=30//facteur, 
-    distance_vision=300//facteur
-)
+        print(f"Lancement de la recherche sur la carte réduite...")
 
-if result_steps is not None:
-    print(f"\n✅ Le robot a trouvé la cible en {result_steps} pas.")
-else:
-    print("\n❌ Le robot n'a pas trouvé la cible dans la limite de pas ou a terminé l'exploration.")
+        result_steps = score(
+            x=TEST_TARGET_X,
+            y=TEST_TARGET_Y,
+            grid=carte_reduite, 
+            show_display=True, 
+            taille_seeker=30//facteur, 
+            distance_vision=300//facteur
+        )
+
+        if result_steps is not None:
+            print(f"\n✅ Le robot a trouvé la cible en {result_steps} pas.")
+        else:
+            print("\n❌ Echec ou fin exploration.")
+            
+    except FileNotFoundError:
+        print("Erreur : Impossible de trouver le fichier carte_03.json pour le test.")

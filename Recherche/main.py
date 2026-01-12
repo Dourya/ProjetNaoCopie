@@ -11,6 +11,8 @@ import signal
 import cv2
 import numpy as np
 
+from movement.navigation import run_algo_on_robot
+
 import json
 # Assurez-vous d'importer la nouvelle fonction (supposons qu'elle est dans navigation.py)
 from movement.navigation import drive_robot_with_algo
@@ -30,7 +32,7 @@ from vision.tool import (
 from vision.camera import subscribe_camera, unsubscribe_camera, get_frame
 
 # --- Configuration de base ---
-default_ip = "172.16.1.164"   # Adresse NAO
+default_ip = "172.16.1.163"   # Adresse NAO
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "keras_model.h5")
 LABELS_PATH = os.path.join(BASE_DIR, "labels.txt")
@@ -109,18 +111,33 @@ def main(session):
             break
 
         if choice == "1":
-            
+            # Charger la carte JSON
             try:
-                with open(os.path.join(BASE_DIR, "maps/carte_03.json"), "r") as f:
-                     grid_data = json.load(f)
-                     grid_map = np.array(grid_data)
+                # Vérifiez que le dossier maps existe bien dans Recherche/maps/
+                map_path = os.path.join(BASE_DIR, "maps/carte_03.json")
+                if not os.path.exists(map_path):
+                    logger.error(f"Fichier carte introuvable : {map_path}")
+                    continue
+
+                with open(map_path, "r") as f:
+                     grid_map = np.array(json.load(f))
+                
+                logger.info(f"🗺️ Carte chargée. Lancement de la recherche avec détection...")
+                
+                # ✅ CORRECTION : Utiliser drive_robot_with_algo au lieu de run_algo_on_robot
+                drive_robot_with_algo(
+                    session, 
+                    video_service, 
+                    model, 
+                    class_names, 
+                    tts, 
+                    name_id, 
+                    grid_map
+                )
+                
             except Exception as e:
-                logger.error(f"Erreur chargement carte : {e}")
-                continue
-
-            # Lancer la recherche pilotée par l'algorithme
-            drive_robot_with_algo(session, video_service, model, class_names, tts, name_id, grid_map)
-
+                logger.error(f"❌ Erreur lors de l'exécution de l'algo : {e}")
+                
         elif choice == "0":
             logger.info("Arrêt demandé par l’utilisateur.")
             break

@@ -16,6 +16,67 @@ from fonction_score import Seeker, Explorer
 from vision.camera import get_frame
 from vision.detection import detect_nao
 
+
+def run_algo_on_robot(session, grid_map):
+    motion = session.service("ALMotion")
+    
+    # 1. Configurer le robot virtuel (Seeker) au même endroit que le vrai robot
+    # Attention : x, y sont des indices de case (ex: 60, 10)
+    seeker = Seeker(pos=(60, 10), vision_angle=70, max_distance=300, 
+                    direction_angle=0, grid=grid_map, target=[], size=10)
+    
+    explorer = Explorer(seeker)
+    current_path = []
+    METERS_PER_CELL = 0.04  # À ajuster : 1 case = 4 cm ?
+
+    print("🚀 Démarrage Algo A* sur le vrai robot...")
+    motion.wakeUp()
+
+    while True:
+        # --- A. Partie Algorithme (Cerveau) ---
+        explorer.mettre_a_jour_vue()
+        
+        # Si pas de chemin, on cherche une cible
+        if not current_path:
+            target = explorer.trouver_cible_lointaine()
+            if target is None:
+                print("Exploration finie.")
+                break
+            
+            path = explorer.trouver_chemin_astar((seeker.x, seeker.y), target)
+            if path:
+                current_path = path
+            else:
+                # Blocage virtuel -> Rotation réelle et virtuelle
+                print("Rotation de déblocage")
+                seeker.tourner(45)
+                motion.moveTo(0, 0, math.radians(45))
+                continue
+
+        # --- B. Partie Mouvement (Jambes) ---
+        if current_path:
+            next_x, next_y = current_path.pop(0)
+            
+            # Calcul du mouvement réel
+            dx = next_x - seeker.x
+            dy = next_y - seeker.y
+            dist_m = math.sqrt(dx**2 + dy**2) * METERS_PER_CELL
+            
+            # Calcul de l'angle
+            angle_target = math.atan2(dy, dx)
+            angle_robot = math.radians(seeker.direction_angle)
+            rotation = angle_target - angle_robot
+            rotation = (rotation + math.pi) % (2 * math.pi) - math.pi # Normalisation
+
+            # Exécution physique
+            if abs(rotation) > 0.1:
+                motion.moveTo(0, 0, rotation)
+            motion.moveTo(dist_m, 0, 0)
+            
+            # Mise à jour virtuelle
+            seeker.x, seeker.y = next_x, next_y
+            seeker.direction_angle = math.degrees(angle_target) % 360
+
 def drive_robot_with_algo(session, video_service, model, class_names, tts, name_id, grid_map):
     """
     Pilote le robot en utilisant la logique de l'Explorer (A*).
