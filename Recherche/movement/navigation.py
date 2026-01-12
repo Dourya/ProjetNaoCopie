@@ -11,6 +11,133 @@ from vision.detection import detect_nao
 # === GÉNÉRATEURS DE MOUVEMENT =================================
 # ==============================================================
 
+
+from fonction_score import Seeker, Explorer
+from vision.camera import get_frame
+from vision.detection import detect_nao
+
+def drive_robot_with_algo(session, video_service, model, class_names, tts, name_id, grid_map):
+    """
+    Pilote le robot en utilisant la logique de l'Explorer (A*).
+    """
+    motion_service = session.service("ALMotion")
+    memory_service = session.service("ALMemory")
+    
+    # --- CONFIGURATION ---
+    # Échelle : Combien de mètres mesure une case de votre grille ?
+    # Exemple : Si votre carte fait 3.5m de large et la grille 350 pixels, SCALE = 0.01 (1cm)
+    CELL_SIZE = 0.04  # 4 cm par case (à ajuster selon la taille réelle de votre arène)
+    
+    # Initialisation du robot virtuel (Seeker)
+    # Attention : Il faut que la position de départ (start_x, start_y) corresponde à la réalité !
+    start_x, start_y = 60, 10  # Exemple arbitraire, à calibrer
+    
+    seeker = Seeker(
+        pos=(start_x, start_y),
+        vision_angle=70,
+        max_distance=300, # En cases
+        direction_angle=0,
+        grid=grid_map,
+        target=[], # On ne connait pas la cible réelle, c'est ce qu'on cherche
+        size=10 # Taille du robot en cases
+    )
+    
+    explorer = Explorer(seeker)
+    current_path = []
+    
+    print("🚀 Démarrage de la navigation algorithmique...")
+    motion_service.wakeUp()
+    
+    # Boucle principale (similaire à recherche_affichage mais physique)
+    while True:
+        # 1. Vérification Visuelle (Est-ce que je vois l'autre robot ?)
+        frame = get_frame(video_service, name_id)
+        if frame is not None:
+            detected, class_name, conf = detect_nao(frame, model, class_names)
+            if detected:
+                print(f"✅ CIBLE TROUVÉE : {class_name} ({conf:.2f})")
+                tts.say(f"J'ai trouvé {class_name} !")
+                motion_service.stopMove()
+                break # Fin du jeu
+        
+        # 2. Mise à jour de la carte mentale (Virtuel)
+        explorer.mettre_a_jour_vue()
+        
+        # 3. Décision du prochain mouvement
+        if not current_path:
+            # Si pas de chemin, on cherche une nouvelle cible inexplorée
+            target_pos = explorer.trouver_cible_lointaine()
+            
+            if target_pos is None:
+                print("🏁 Exploration terminée (tout est vu).")
+                tts.say("J'ai fini d'explorer.")
+                break
+                
+            print(f"📍 Nouvelle cible algorithmique : {target_pos}")
+            path = explorer.trouver_chemin_astar((seeker.x, seeker.y), target_pos)
+            
+            if path:
+                current_path = path
+            else:
+                # Blocage : on fait une rotation sur place pour débloquer la vue/A*
+                print("⚠️ Pas de chemin, rotation de secours.")
+                motion_service.moveTo(0, 0, math.radians(45))
+                seeker.tourner(45)
+                continue
+
+        # 4. Exécution du mouvement (Physique)
+        if current_path:
+            next_x, next_y = current_path.pop(0)
+            
+            # Calcul du déplacement en cases
+            dx = next_x - seeker.x
+            dy = next_y - seeker.y
+            
+            if dx == 0 and dy == 0:
+                continue
+                
+            # Calcul de l'angle et de la distance pour le monde réel
+            dist_meters = math.sqrt(dx**2 + dy**2) * CELL_SIZE
+            
+            # Orientation : Le robot doit se tourner vers la case cible
+            # L'angle cible dans la grille (0° = Est, 90° = Sud dans votre code fonction_score ?)
+            # Vérifions votre code : 0->(1,0) (Est), 90->(0,1) (Sud). C'est standard image.
+            target_angle_rad = math.atan2(dy, dx)
+            
+            # Conversion de l'angle absolu grille en angle relatif robot
+            # On assume que seeker.direction_angle est en degrés et absolu
+            current_angle_rad = math.radians(seeker.direction_angle)
+            rotation_needed = target_angle_rad - current_angle_rad
+            
+            # Normalisation de l'angle (-pi à pi)
+            rotation_needed = (rotation_needed + math.pi) % (2 * math.pi) - math.pi
+            
+            # --- COMMANDE MOTEUR ---
+            # On tourne d'abord (si nécessaire) puis on avance
+            if abs(rotation_needed) > 0.1: # Si rotation significative
+                motion_service.moveTo(0, 0, rotation_needed)
+            
+            motion_service.moveTo(dist_meters, 0, 0)
+            
+            # 5. Mise à jour de la position virtuelle
+            seeker.x = next_x
+            seeker.y = next_y
+            # Mise à jour de l'angle virtuel (on arrondit comme dans votre algo)
+            new_angle_deg = math.degrees(math.atan2(dy, dx))
+            seeker.direction_angle = round(new_angle_deg / 45) * 45 % 360
+            
+            # (Optionnel) Vérification Sonar pour éviter les vrais murs non cartographiés
+            l = memory_service.getData("Device/SubDeviceList/US/Left/Sensor/Value")
+            r = memory_service.getData("Device/SubDeviceList/US/Right/Sensor/Value")
+            if l < 0.4 or r < 0.4:
+                print("🛑 Obstacle imprévu détecté !")
+                motion_service.stopMove()
+                # Ici, il faudrait idéalement mettre à jour la grille (grid_map) avec un mur
+                # explorer.knowledge_map[ny][nx] = 2 
+                current_path = [] # On force le recalcul d'un chemin
+
+    motion_service.rest()
+
 def rotate_on_place_generator(motion_service, num_steps=8, step_deg=45, pause=0.3):
     """Effectue une rotation complète sur place."""
     step_rad = math.radians(step_deg)

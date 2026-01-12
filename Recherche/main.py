@@ -11,6 +11,10 @@ import signal
 import cv2
 import numpy as np
 
+import json
+# Assurez-vous d'importer la nouvelle fonction (supposons qu'elle est dans navigation.py)
+from movement.navigation import drive_robot_with_algo
+
 from tensorflow.keras.models import load_model
 
 from movement import wake_up, rest
@@ -105,8 +109,17 @@ def main(session):
             break
 
         if choice == "1":
-            # Lancement du cycle optimisé
-            optimised_search_cycle(session, video_service, model, class_names, tts, name_id)  
+            
+            try:
+                with open(os.path.join(BASE_DIR, "maps/carte_03.json"), "r") as f:
+                     grid_data = json.load(f)
+                     grid_map = np.array(grid_data)
+            except Exception as e:
+                logger.error(f"Erreur chargement carte : {e}")
+                continue
+
+            # Lancer la recherche pilotée par l'algorithme
+            drive_robot_with_algo(session, video_service, model, class_names, tts, name_id, grid_map)
 
         elif choice == "0":
             logger.info("Arrêt demandé par l’utilisateur.")
